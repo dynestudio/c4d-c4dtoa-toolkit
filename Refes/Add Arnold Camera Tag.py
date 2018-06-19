@@ -30,8 +30,7 @@ C4DAIP_FISHEYE_CAMERA_SHUTTER_END      = 209500179
 C4DAIP_CYL_CAMERA_SHUTTER_START        = 746177151
 C4DAIP_CYL_CAMERA_SHUTTER_END          = 74265400
 
-#get all objects with children
-def get_all_objects(op, filter, output):
+def get_all_objects(op, filter, output): # get all objects with children
     while op:
         if filter(op):
             output.append(op)
@@ -39,8 +38,27 @@ def get_all_objects(op, filter, output):
         op = op.GetNext()
     return output
 
+def create_c4d_obj(Obj_ID, name): # create custom objects
+    obj = c4d.BaseObject(Obj_ID)
+    obj[c4d.ID_BASELIST_NAME] = name
+    doc.InsertObject(obj)
+    c4d.EventAdd() ; return obj
+
 def addAiTag():
     camerasList = get_all_objects(doc.GetFirstObject(), lambda x: x.CheckType(c4d.Ocamera), []) # get all cameras from the scene
+    if not camerasList:
+        # create a new base camera
+        camera = create_c4d_obj(c4d.Ocamera, 'Base Camera')
+        # get viewport cmera
+        bd  = doc.GetActiveBaseDraw()
+        vcam = bd.GetEditorCamera()
+        vp_x = vcam[c4d.ID_BASEOBJECT_REL_POSITION,c4d.VECTOR_X] ; vp_y = vcam[c4d.ID_BASEOBJECT_REL_POSITION,c4d.VECTOR_Y] ; vp_z = vcam[c4d.ID_BASEOBJECT_REL_POSITION,c4d.VECTOR_Z]
+        vr_x = vcam[c4d.ID_BASEOBJECT_REL_ROTATION,c4d.VECTOR_X] ; vr_y = vcam[c4d.ID_BASEOBJECT_REL_ROTATION,c4d.VECTOR_Y] ; vr_z = vcam[c4d.ID_BASEOBJECT_REL_ROTATION,c4d.VECTOR_Z]
+        # set new camera position based on viewport camera
+        camera[c4d.ID_BASEOBJECT_REL_POSITION] = c4d.Vector(vp_x, vp_y, vp_z)
+        camera[c4d.ID_BASEOBJECT_REL_ROTATION] = c4d.Vector(vr_x, vr_y, vr_z)
+        # add the new camera to cameralist
+        camerasList.append(camera)
 
     for obj in camerasList:
         obj_tags = obj.GetTags()
@@ -79,5 +97,6 @@ def addAiTag():
         cam_tag[CAMERA_SHUTTER_END]               = 0.5
 
     c4d.EventAdd()
+    return cam_tag
 
 addAiTag()

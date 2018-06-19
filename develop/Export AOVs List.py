@@ -1,5 +1,5 @@
 """
-Set Optix AOVs - C4D script 0.1 wip 02
+Set Optix AOVs - C4D script v0.1 wip 01
 Thanks for download - for commercial and personal uses.
 Set Optix AOVs granted shall not be copied, distributed, or-sold, offered for resale, transferred in whole or in part except that you may make one copy for archive purposes only.
 
@@ -25,6 +25,7 @@ from c4d import gui
 ARNOLD_RENDERER                   = 1029988
 ARNOLD_RENDERER_COMMAND           = 1039333
 ARNOLD_DRIVER                     = 1030141
+C4DAIN_DRIVER_EXR                 = 9504161
 
 #render data global ids
 renderdata   = doc.GetActiveRenderData()
@@ -43,7 +44,7 @@ def get_all_objects(op, filter, output):
     return output
 
 # get arnold renderer
-def GetArnoldRenderSettings(): #thanks to c4dtoa support for this code
+'''def GetArnoldRenderSettings(): #thanks to c4dtoa support for this code
     # find the active Arnold render settings
     videopost = renderdata.GetFirstVideoPost()
     while videopost:
@@ -61,32 +62,55 @@ def GetArnoldRenderSettings(): #thanks to c4dtoa support for this code
                 return videopost;
             videopost = videopost.GetNext()
              
-    return None
+    return None'''
 
 # drivers - Turn ON optix in each aov
 def main():
-    # find the Arnold video post data   
+    '''# find the Arnold video post data   
     arnoldRenderSettings = GetArnoldRenderSettings()
     if arnoldRenderSettings is None:
-        raise BaseException("Failed to find Arnold render settings")
+        raise BaseException("Failed to find Arnold render settings")'''
 
     # drivers objects list
     driversList = get_all_objects(doc.GetFirstObject(), lambda x: x.CheckType(ARNOLD_DRIVER), [])
 
+    aov_list = []
+
     # find aovs with Optix setting
     for driver in driversList:
-        driver_name = driver[c4d.ID_BASELIST_NAME]
-        print "Driver: " + driver_name + "\n"
+        driver_type = driver[c4d.C4DAI_DRIVER_TYPE]
+        driver_variance = driver[c4d.C4DAI_DRIVER_VARIANCE_AOV]
 
-        driver_AOVs = driver.GetChildren()
+        if driver_type == C4DAIN_DRIVER_EXR:
 
-        for aov in driver_AOVs:
-            aov_name = aov[c4d.ID_BASELIST_NAME]
-            print "AOV: " + aov_name
+            if driver_variance == True:
 
-            aov[c4d.C4DAI_AOV_DENOISE] = True
+                driver_AOVs = driver.GetChildren()
+
+                for aov in driver_AOVs:
+                    aov_name = aov[c4d.ID_BASELIST_NAME]
+                    print "AOV: " + aov_name
+                    aov_list.append(aov_name)
+
+    aov_delete = ["diffuse_albedo","N","Z"]
+
+    aov_list_tempindex = []
+
+    for i in range(len(aov_list)):
+        for e in aov_delete:
+            if aov_list[i] == e:
+                aov_list_tempindex.append(i)
+
+    i = 0
+
+    for b in aov_list_tempindex:   
+        del aov_list[b - i]
+        i+=1
 
     c4d.EventAdd()
+
+    print aov_list
+
 
 if __name__=='__main__':
     main()

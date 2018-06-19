@@ -3,6 +3,8 @@ from c4d import gui
 
 ''' Pending features:
 
+v01
+
 -Full features per shaders.
 -Facing ration IDs
 -Add shaders to layers.

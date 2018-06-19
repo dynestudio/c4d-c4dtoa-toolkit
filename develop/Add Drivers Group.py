@@ -1,5 +1,5 @@
 """
-Add Drivers Group - C4D script v0.1
+Add Drivers Group - C4D script v0.1 wip 01
 Thanks for download - for commercial and personal uses.
 This script / tool granted shall not be copied, distributed, or-sold, offered for resale, transferred in whole or in part except that you may make one copy for archive purposes only.
 

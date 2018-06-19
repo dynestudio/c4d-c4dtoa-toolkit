@@ -1,5 +1,5 @@
 """
-Set Optix AOVs - C4D script v0.1 wip 01
+Set Optix AOVs - C4D script v0.1 wip 02
 Thanks for download - for commercial and personal uses.
 Set Optix AOVs granted shall not be copied, distributed, or-sold, offered for resale, transferred in whole or in part except that you may make one copy for archive purposes only.
 
@@ -89,7 +89,6 @@ def main():
 
                 for aov in driver_AOVs:
                     aov_name = aov[c4d.ID_BASELIST_NAME]
-                    print "AOV: " + aov_name
                     aov_list.append(aov_name)
 
     aov_delete = ["diffuse_albedo","N","Z"]
@@ -107,9 +106,16 @@ def main():
         del aov_list[b - i]
         i+=1
 
-    c4d.EventAdd()
-
     print aov_list
+
+    aov_string_export = ""
+
+    for i in aov_list:
+        aov_string_export += i + ", "
+
+    print aov_string_export[:-2]
+
+    #save the txt file
 
 
 if __name__=='__main__':

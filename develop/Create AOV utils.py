@@ -1,9 +1,7 @@
 import c4d
 from c4d import gui
 
-''' Pending features:
-
-v01
+""" Pending features:
 
 -Full features per shaders.
 -Facing ration IDs
@@ -14,9 +12,12 @@ v01
 -checkear nombre del aov
 -corregir AOVs y funciones de motion vector, cryptomatte y facing ratio
 -administrar drivers (display, info y crypto driver)
+-Un Do y Re Do
+-que los AOV solo se pongan en el info driver
+-el wireframe no esta poniendose en quadas
+-Cryptomatte se conecta mal
 
-
-'''
+"""
 
 # from api/util/Constants.h
 C4DTOA_MSG_TYPE = 1000
@@ -176,6 +177,20 @@ def getArnoldRenderSettings():
             
     return None
 
+def addDriver(driver_name, driver_type):
+    driver = doc.SearchObject(driver_name)
+    if driver is None:
+        driver = c4d.BaseObject(ARNOLD_DRIVER)
+        driver.SetName(driver_name)
+        driver[c4d.C4DAI_DRIVER_TYPE] = driver_type
+        driver[c4d.C4DAI_DRIVER_MERGE_AOVS] = True
+        doc.InsertObject(driver)
+        # delete the BEauty AOV
+        if not driver_name == "<display driver>" and "Crypto":
+            beauty_aov = driver.GetDown()
+            beauty_aov.Remove()
+    return driver
+
 def addAov(driver, aovName):
     # skip when the aov is already added
     aov = driver.GetDown()
@@ -268,7 +283,7 @@ def main():
     print dialog
     print pdialog
 
-    shaders_AOVs_names = ['UV', 'Wireframe', 'AO', 'Cryptomatte', 'Fresnel', 'Motion Vector', 'Checkerboard']
+    shaders_AOVs_names = ['UV', 'Wireframe', 'AO', 'Crypto', 'Fresnel', 'Motion Vector', 'Checkerboard']
 
     if dialog == IDC_AOV_00:
         shader_AOV_name = shaders_AOVs_names[0] ; shader = C4DAIN_UTILITY           ; AOV_type = 'RGB'
@@ -293,9 +308,7 @@ def main():
         mat = c4d.BaseMaterial(ARNOLD_SHADER_NETWORK)
         if mat is None:
             raise Exception("Failed to create material")
-        mat.SetName(shader_AOV_name)
-        doc.InsertMaterial(mat)
-        mat_exist = False
+        mat.SetName(shader_AOV_name) ; doc.InsertMaterial(mat) ; mat_exist = False ; # agregar material al layer
     else:
         mat_exist = True
 
@@ -310,48 +323,44 @@ def main():
         aovShaders.InsertObject(mat, 0)
         arnoldRenderSettings[C4DAIP_OPTIONS_AOV_SHADERS] = aovShaders
 
-    # create an EXR driver
-    if not pdialog:
-        exrDriver = doc.SearchObject("info")
-        if exrDriver is None:
-            exrDriver = c4d.BaseObject(ARNOLD_DRIVER)
-            exrDriver.SetName("info")
-            exrDriver[c4d.C4DAI_DRIVER_TYPE] = C4DAIN_DRIVER_EXR
-            exrDriver[c4d.C4DAI_DRIVER_MERGE_AOVS] = True
-            doc.InsertObject(exrDriver)
+    # drivers operations
+    displayDriver = addDriver("<display driver>", C4DAIN_DRIVER_C4D_DISPLAY)
 
-    # create the display driver
-    displayDriver = doc.SearchObject("<display driver>")
-    if displayDriver is None:
-        displayDriver = c4d.BaseObject(ARNOLD_DRIVER)
-        displayDriver.SetName("<display driver>")
-        displayDriver[c4d.C4DAI_DRIVER_TYPE] = C4DAIN_DRIVER_C4D_DISPLAY
-        doc.InsertObject(displayDriver)
+    if shader_AOV_name is 'Crypto':
+        if displayDriver:
+            addAov(displayDriver, "crypto_asset")
+            addAov(displayDriver, "crypto_object")
+            addAov(displayDriver, "crypto_material")
 
-    # add the cryptomatte AOVs to the drivers
-    if shader_AOV_name is 'Cryptomatte':
-        addAov(displayDriver, "crypto_asset")
-        addAov(displayDriver, "crypto_object")
-        addAov(displayDriver, "crypto_material")
+        cryptoDriver = addDriver("Crypto", C4DAIN_DRIVER_EXR)
 
-        addAov(exrDriver, "crypto_asset")
-        addAov(exrDriver, "crypto_object")
-        addAov(exrDriver, "crypto_material")
+        if cryptoDriver:
+            addAov(cryptoDriver, "crypto_asset")
+            addAov(cryptoDriver, "crypto_object")
+            addAov(cryptoDriver, "crypto_material")
+
     else:
-        addAov(displayDriver, shader_AOV_name)
+        if displayDriver:
+            addAov(displayDriver, shader_AOV_name)
+
+    # extra info driver
     if not pdialog:
-        addAov(exrDriver, shader_AOV_name)
+        if not shader_AOV_name == 'Crypto':
+            exrDriver = addDriver("info", C4DAIN_DRIVER_EXR)
+            if exrDriver:
+                addAov(exrDriver, shader_AOV_name)
 
     # shaders operations
     if not mat_exist:
-        # create shaders
-
+        # create main shaders
         shader_AOV = CreateArnoldShader(mat, shader, 0, 50)
         if shader_AOV is None:
             raise Exception("Failed to create shader_AOV shader")
-        if shader_AOV_name is 'Cryptomatte':
+        # cryptomatte exceptoin
+        if shader_AOV_name is 'Crypto':
             SetRootShader(mat, shader_AOV, ARNOLD_BEAUTY_PORT_ID)
         else:
+            # create write AOV shaders
             write_AOV = CreateArnoldShader(mat, C4DAIN_AOV_WRITE_RGB, 150, 100)
             if write_AOV is None:
                 raise Exception("Failed to create write_AOV shader")
@@ -371,7 +380,7 @@ def main():
                 shader_AOV.GetOpContainerInstance().SetInt32(C4DAIP_WIREFRAME_EDGE_TYPE, 1)
             elif shader_AOV_name is 'AO':
                 shader_AOV.GetOpContainerInstance().SetInt32(C4DAIP_AMBIENT_OCCLUSION_SAMPLES, 4)
-            elif shader_AOV_name is 'Cryptomatte':
+            elif shader_AOV_name is 'Crypto':
                 None
             elif shader_AOV_name is 'fresnel':
                 None
@@ -390,12 +399,19 @@ def main():
     else:
         None
     
+    # motion vectore configurations
+    """if shader_AOV_name is 'Motion Vector':
+        open question dialog
+        mblur_question = c4d.gui.QuestionDialog('do you want to make a camera an render setting for motion blur?')
+        if mblur_question is True:
+            ejecutar render settings
+            ejecturar camera tag
+        else:
+            None"""
+
+
     # redraw
     c4d.EventAdd(c4d.EVENT_FORCEREDRAW)
    
 if __name__=='__main__':
     main()
-
-
-#open question dialog
-mblur_question = c4d.gui.QuestionDialog('do you want to make a camera an render setting for motion blur?')

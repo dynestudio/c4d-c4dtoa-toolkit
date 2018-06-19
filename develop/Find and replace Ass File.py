@@ -47,14 +47,15 @@ def main():
         return
 
     # Open the string dialog
-    dlg = OptionsDialog()
+    """dlg = OptionsDialog()
     dlg.Open(c4d.DLG_TYPE_MODAL, defaultw=300, defaulth=50)
     if not dlg.ok:
         return
 
-    procedural_folder = dlg.findGName
+    procedural_folder = dlg.findGName"""
 
     mayaProcedural_name = 'ArnoldStandIn'
+    procedurals_list = []
 
     for obj in objsList:
         if mayaProcedural_name in obj[c4d.ID_BASELIST_NAME]:
@@ -75,18 +76,19 @@ def main():
             print procedural_scale
             print 'checkpoint 03"""
 
-            procedural[c4d.ID_BASEOBJECT_REL_SCALE] = c4d.Vector(0.1,0.1,0.1)
+            procedural[c4d.ID_BASEOBJECT_REL_SCALE] = c4d.Vector(0.01,0.01,0.01)
+            procedural[c4d.C4DAI_PROCEDURAL_OBJECT_DISPLAY_MODE] = 2 # point cloud mode
             path = c4d.storage.LoadDialog(title = 'select: ' + procedural_name)
             procedural[c4d.C4DAI_PROCEDURAL_PATH] = path
             doc.InsertObject(procedural)
 
             # insert the procedural as a child from each obj
-            procedural.InsertUnder(obj)
+            procedural.InsertUnder(obj) ; procedurals_list.append(procedural_name)
             print 'Procedural inserted on: ' + procedural_name
         else:
             None
 
-    print 'Procedurals added: ' + str(len(objsList))
+    print 'Procedurals added: ' + str(len(procedurals_list))
     c4d.EventAdd()
 
 if __name__=='__main__':

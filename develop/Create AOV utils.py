@@ -3,7 +3,6 @@ from c4d import gui ; from ctypes import *
 
 """ Pending features:
 
--Motion vector motion blur in render settings and camera (custom dialog)
 -Custom cryptomattes?
 - Default selection on display driver (del primer dialog)
 -administrar drivers (display, info y crypto driver)
@@ -12,11 +11,13 @@ from c4d import gui ; from ctypes import *
 -Agregar una opcion que agregue todos los AOVs de la lista de dialogo.
 -Considerar el write RGBA?
 -Half float para los Drivers
--Settings especiales para AOV del motion vector
+- que en el shader de motion vector el Max displace este en 64
+- https://support.solidangle.com/display/A5AFCUG/Motion+Vector revisar workflow correcto del mb
+- hacer que el add ai tag agregue una camara por si no hay camaras en l escena
 
 """
 
-# from api/util/Constants.h
+# ai constants
 C4DTOA_MSG_TYPE = 1000
 C4DTOA_MSG_PARAM1 = 2001
 C4DTOA_MSG_PARAM2 = 2002
@@ -27,18 +28,18 @@ C4DTOA_MSG_ADD_SHADER = 1029
 C4DTOA_MSG_ADD_CONNECTION = 1031
 C4DTOA_MSG_CONNECT_ROOT_SHADER = 1033
 
-# from c4dtoa_symbols.h
+#c4dtoa symbols
 ARNOLD_RENDERER = 1029988
 ARNOLD_RENDERER_COMMAND = 1039333
 ARNOLD_SHADER_NETWORK = 1033991
 ARNOLD_SHADER_GV = 1033990
 ARNOLD_REFERENCE_GV = 1035541
 
-# from api/util/ArnolShaderNetworkUtil.h
+# ASN utils
 ARNOLD_BEAUTY_PORT_ID = 537905099
 ARNOLD_DISPLACEMENT_PORT_ID = 537905100
 
-# from api/util/NodeIds.h
+# nodes ids
 C4DAIN_WIREFRAME = 963864967
 C4DAIN_AMBIENT_OCCLUSION = 213691123
 C4DAIN_CHECKERBOARD = 1208643042
@@ -95,6 +96,40 @@ C4DAIP_CHECKERBOARD_V_FREQUENCY  = 34844599
 
 # facing ratio IDs
 C4DAIP_FACING_RATIO_INVERT = 1403163377
+
+# AI tag id
+C4DAIN_TAG = 1029989
+
+# camera ids
+C4DAIN_CYL_CAMERA        = 12630987
+C4DAIN_FISHEYE_CAMERA    = 1127342118
+C4DAIN_ORTHO_CAMERA      = 204996153
+C4DAIN_PERSP_CAMERA      = 1559999735
+C4DAIN_SPHERICAL_CAMERA  = 1758358152
+C4DAIN_VR_CAMERA         = 1470986773
+
+# persp cam
+C4DAIP_PERSP_CAMERA_SHUTTER_START      = 547660095
+C4DAIP_PERSP_CAMERA_SHUTTER_END        = 1921224566
+# vr cam
+C4DAIP_VR_CAMERA_SHUTTER_START         = 1436598367
+C4DAIP_VR_CAMERA_SHUTTER_END           = 1994337624
+# spherical cam
+C4DAIP_SPHERICAL_CAMERA_SHUTTER_START  = 784072210
+C4DAIP_SPHERICAL_CAMERA_SHUTTER_END    = 182126491
+# ortho cam
+C4DAIP_ORTHO_CAMERA_SHUTTER_START      = 28462205
+C4DAIP_ORTHO_CAMERA_SHUTTER_END        = 2031178548
+# fisheye cam
+C4DAIP_FISHEYE_CAMERA_SHUTTER_START    = 495609116
+C4DAIP_FISHEYE_CAMERA_SHUTTER_END      = 209500179
+# cyl cam
+C4DAIP_CYL_CAMERA_SHUTTER_START        = 746177151
+C4DAIP_CYL_CAMERA_SHUTTER_END          = 74265400
+
+# render data global ids
+renderdata   = doc.GetActiveRenderData()
+rdata        = renderdata.GetData()
 
 # gui IDs
 IDC_LABELNAME           = 10000
@@ -220,6 +255,14 @@ def addAOV_null (name, layer, mat):
 
     return null
 
+def get_all_objects(op, filter, output):  #get all objects from each type
+    while op:
+        if filter(op):
+            output.append(op)
+        get_all_objects(op.GetDown(), filter, output)
+        op = op.GetNext()
+    return output
+
 def hashid(name):
     if name is None: return 0
      
@@ -230,7 +273,7 @@ def hashid(name):
     if h < 0: h = -h
     return h
 
-def getArnoldRenderSettings():
+def GetArnoldRenderSettings():
     rdata = doc.GetActiveRenderData()
     videopost = rdata.GetFirstVideoPost()
     while videopost:
@@ -248,6 +291,22 @@ def getArnoldRenderSettings():
             videopost = videopost.GetNext()
             
     return None
+
+def arnold_mblur_rendersettings():
+    # find the Arnold video post data   
+    arnoldRenderSettings = GetArnoldRenderSettings()
+    if arnoldRenderSettings is None:
+        raise BaseException("Failed to find Arnold render settings") ; return False
+     
+    # setup the settings
+    arnoldRenderSettings[c4d.C4DAI_OPTIONS_ENABLE_MOTION_BLUR]     = True
+    arnoldRenderSettings[c4d.C4DAI_OPTIONS_ENABLE_MB_DEFORMATION]  = True
+    arnoldRenderSettings[c4d.C4DAI_OPTIONS_ENABLE_MB_CAMERA]       = True
+    arnoldRenderSettings[c4d.C4DAI_OPTIONS_MB_STEPS]               = 2
+    arnoldRenderSettings[c4d.C4DAI_OPTIONS_MB_SHUTTER_POSITION]    = 1
+    arnoldRenderSettings[c4d.C4DAI_OPTIONS_MB_SHUTTER_SIZE]        = 0.5
+
+    return True
 
 def addDriver(driver_name, driver_type):
     driver = doc.SearchObject(driver_name)
@@ -275,6 +334,47 @@ def addAov(driver, aovName):
     aov = c4d.BaseObject(ARNOLD_AOV)
     aov.SetName(aovName)
     aov.InsertUnderLast(driver)   
+
+def addAiTag():
+    camerasList = get_all_objects(doc.GetFirstObject(), lambda x: x.CheckType(c4d.Ocamera), []) # get all cameras from the scene
+
+    for obj in camerasList:
+        obj_tags = obj.GetTags()
+        if not obj_tags:
+            cam_tag = obj.MakeTag(C4DAIN_TAG) # new camera tag
+        else:
+            obj_tags_types = []
+            for tag in obj_tags:
+                obj_tags_types.append(tag.GetType())
+                if tag.GetType() == C4DAIN_TAG:
+                    cam_tag = tag
+
+            if not C4DAIN_TAG in obj_tags_types:
+                cam_tag = obj.MakeTag(C4DAIN_TAG)
+
+        if cam_tag[c4d.AITAG_CAMERA_USE_TYPE] == False:
+            cam_tag[c4d.AITAG_CAMERA_USE_TYPE] = True ; cam_tag[c4d.AITAG_CAMERA_TYPE] = C4DAIN_PERSP_CAMERA
+
+        # cam settings definitions based on each camera type
+        if cam_tag[c4d.AITAG_CAMERA_TYPE] == C4DAIN_CYL_CAMERA:           # cyl camera
+            CAMERA_SHUTTER_START = C4DAIP_CYL_CAMERA_SHUTTER_START ; CAMERA_SHUTTER_END = C4DAIP_CYL_CAMERA_SHUTTER_END
+        elif cam_tag[c4d.AITAG_CAMERA_TYPE] == C4DAIN_FISHEYE_CAMERA:     # fisheye camera
+            CAMERA_SHUTTER_START = C4DAIP_FISHEYE_CAMERA_SHUTTER_START ; CAMERA_SHUTTER_END = C4DAIP_FISHEYE_CAMERA_SHUTTER_END
+        elif cam_tag[c4d.AITAG_CAMERA_TYPE] == C4DAIN_ORTHO_CAMERA:       # ortho camera
+            CAMERA_SHUTTER_START = C4DAIP_ORTHO_CAMERA_SHUTTER_START ; CAMERA_SHUTTER_END = C4DAIP_ORTHO_CAMERA_SHUTTER_END
+        elif cam_tag[c4d.AITAG_CAMERA_TYPE] == C4DAIN_SPHERICAL_CAMERA:   # spherical camera
+            CAMERA_SHUTTER_START = C4DAIP_SPHERICAL_CAMERA_SHUTTER_START ; CAMERA_SHUTTER_END = C4DAIP_SPHERICAL_CAMERA_SHUTTER_END
+        elif cam_tag[c4d.AITAG_CAMERA_TYPE] == C4DAIN_VR_CAMERA:          # vr camera
+            CAMERA_SHUTTER_START = C4DAIP_VR_CAMERA_SHUTTER_START ; CAMERA_SHUTTER_END = C4DAIP_VR_CAMERA_SHUTTER_END
+        else:                                                             # persp camera
+            CAMERA_SHUTTER_START = C4DAIP_PERSP_CAMERA_SHUTTER_START ; CAMERA_SHUTTER_END = C4DAIP_PERSP_CAMERA_SHUTTER_END
+
+        # motion vector settings
+        cam_tag[c4d.C4DAI_CAMERA_CUSTOM_SHUTTER]  = True
+        cam_tag[CAMERA_SHUTTER_START]             = 0.5
+        cam_tag[CAMERA_SHUTTER_END]               = 0.5
+
+    return cam_tag
 
 def CreateArnoldShader(material, nodeId, posx, posy):
     msg = c4d.BaseContainer()
@@ -330,7 +430,7 @@ def addAov(driver, aovName):
    
 def main():
     # find the Arnold video post data    
-    arnoldRenderSettings = getArnoldRenderSettings()
+    arnoldRenderSettings = GetArnoldRenderSettings()
     if arnoldRenderSettings is None:
         raise BaseException("Failed to find Arnold render settings")
 
@@ -478,7 +578,7 @@ def main():
                 shader_AOV.GetOpContainerInstance().SetBool(C4DAIP_FACING_RATIO_INVERT, True)
             elif shader_AOV_name is shaders_AOVs_names[5]: # motion vector
                 shader_AOV.GetOpContainerInstance().SetBool(C4DAIP_MOTION_VECTOR_RAW, True)
-                shader_AOV.GetOpContainerInstance().SetFloat(C4DAIP_MOTION_VECTOR_MAX_DISPLACE, 64)
+                shader_AOV.GetOpContainerInstance().SetFloat(C4DAIP_MOTION_VECTOR_MAX_DISPLACE, 0)
             elif shader_AOV_name is shaders_AOVs_names[6]: # checkerboard
                 shader_AOV.GetOpContainerInstance().SetInt32(C4DAIP_CHECKERBOARD_U_FREQUENCY, 5)
                 shader_AOV.GetOpContainerInstance().SetInt32(C4DAIP_CHECKERBOARD_V_FREQUENCY, 5)
@@ -492,15 +592,20 @@ def main():
     else:
         None
     
-    # motion vectore configurations
-    """if shader_AOV_name is 'Motion Vector':
-        open question dialog
+    # motion vector additional settings
+    if shader_AOV_name is shaders_AOVs_names[5]: # motion vector
         mblur_question = c4d.gui.QuestionDialog('do you want to make a camera an render setting for motion blur?')
         if mblur_question is True:
-            ejecutar render settings
-            ejecturar camera tag
+            arnold_mblur_rendersettings()
+            addAiTag()
+            aovs = get_all_objects(doc.GetFirstObject(), lambda x: x.CheckType(ARNOLD_AOV), []) # get all cameras from the scene
+            for aov in aovs:
+                if aov[c4d.ID_BASELIST_NAME] == 'mblur':
+                    aov[c4d.C4DAI_AOV_DATATYPE] = 7 # vector AOV
+                else:
+                    None
         else:
-            None"""
+            None
 
     # redraw
     c4d.EventAdd(c4d.EVENT_FORCEREDRAW)

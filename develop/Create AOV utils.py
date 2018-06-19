@@ -354,7 +354,7 @@ def addAiTag():
         # set new camera position based on viewport camera
         camera[c4d.ID_BASEOBJECT_REL_POSITION] = c4d.Vector(vp_x, vp_y, vp_z)
         camera[c4d.ID_BASEOBJECT_REL_ROTATION] = c4d.Vector(vr_x, vr_y, vr_z)
-        # add the new camera to cameralist
+        # add the new camera to cameralists
         camerasList.append(camera)
 
     for obj in camerasList:

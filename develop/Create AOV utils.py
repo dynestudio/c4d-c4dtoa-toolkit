@@ -3,6 +3,8 @@ from c4d import gui ; from ctypes import *
 
 """ Pending features:
 
+V04
+
 -Custom cryptomattes?
 - Default selection on display driver (del primer dialog)
 -administrar drivers (display, info y crypto driver)

@@ -1,21 +1,18 @@
-import c4d
-from c4d import gui
+import c4d , ctypes
+from c4d import gui ; from ctypes import *
 
 """ Pending features:
 
--Full features per shaders.
--Facing ration IDs
--Add shaders to layers.
 -Motion vector motion blur in render settings and camera (custom dialog)
 -Custom cryptomattes?
 - Default selection on display driver (del primer dialog)
--checkear nombre del aov
--corregir AOVs y funciones de motion vector, cryptomatte y facing ratio
 -administrar drivers (display, info y crypto driver)
 -Un Do y Re Do
--que los AOV solo se pongan en el info driver
--el wireframe no esta poniendose en quadas
--Cryptomatte se conecta mal
+-revisar posicion de shaders cuando se crean.
+-Agregar una opcion que agregue todos los AOVs de la lista de dialogo.
+-Considerar el write RGBA?
+-Half float para los Drivers
+-Settings especiales para AOV del motion vector
 
 """
 
@@ -42,42 +39,10 @@ ARNOLD_BEAUTY_PORT_ID = 537905099
 ARNOLD_DISPLACEMENT_PORT_ID = 537905100
 
 # from api/util/NodeIds.h
-C4DAIN_STANDARD_SURFACE = 314733630
-C4DAIN_NOISE = 268710787
 C4DAIN_WIREFRAME = 963864967
 C4DAIN_AMBIENT_OCCLUSION = 213691123
 C4DAIN_CHECKERBOARD = 1208643042
 C4DAIN_MOTION_VECTOR = 973550765
-
-#utility IDs
-C4DAIN_UTILITY = 1214045817
-C4DAIP_UTILITY_SHADE_MODE  = 1475208304
-C4DAIP_UTILITY_COLOR_MODE  = 716698282
-C4DAIP_UTILITY_COLOR_MODE__UV = 5
-C4DAIP_UTILITY_SHADE_MODE__FLAT = 2
-
-#aov writes IDs
-C4DAIN_AOV_WRITE_FLOAT = 878744470
-C4DAIN_AOV_WRITE_INT = 1243149505
-C4DAIN_AOV_WRITE_RGB = 1243139953
-
-C4DAIN_AOV_WRITE_RGB_AOV_NAME = 1961385827
-C4DAIN_AOV_WRITE_RGB_AOV_INPUT = 295764338
-
-
-C4DAIN_AOV_WRITE_FLOAT_AOV_NAME = 1578967454
-C4DAIN_AOV_WRITE_FLOAT_AOV_INPUT = 560859917
-
-# from res/description/ainode_standard_surface.h
-C4DAIP_STANDARD_SURFACE_BASE_COLOR = 1044225467
-C4DAIP_STANDARD_SURFACE_SPECULAR = 1046994997
-C4DAIP_STANDARD_SURFACE_SPECULAR_COLOR = 801517079
-
-# from res/description/ainode_noise.h
-C4DAIP_NOISE_OCTAVES = 35478650
-C4DAIP_NOISE_DISTORTION = 1840107712
-
-C4DAIP_OPTIONS_AOV_SHADERS = 2113089010
 
 # drivers and AOVs IDs
 ARNOLD_DRIVER = 1030141
@@ -85,6 +50,31 @@ ARNOLD_AOV = 1030369
 C4DAIN_CRYPTOMATTE = 1563242911
 C4DAIN_DRIVER_C4D_DISPLAY = 1927516736
 C4DAIN_DRIVER_EXR = 9504161
+
+# aov shaders ID
+C4DAIP_OPTIONS_AOV_SHADERS = 2113089010
+
+# utility IDs
+C4DAIN_UTILITY = 1214045817
+C4DAIP_UTILITY_SHADE_MODE  = 1475208304
+C4DAIP_UTILITY_COLOR_MODE  = 716698282
+C4DAIP_UTILITY_COLOR_MODE__UV = 5
+C4DAIP_UTILITY_SHADE_MODE__FLAT = 2
+
+# aov writes IDs
+# main nodes ids
+C4DAIN_AOV_WRITE_FLOAT = 878744470
+C4DAIN_AOV_WRITE_INT = 1243149505
+C4DAIN_AOV_WRITE_RGB = 1243139953
+# write rgb
+C4DAIN_AOV_WRITE_RGB_AOV_NAME = 1961385827
+C4DAIN_AOV_WRITE_RGB_AOV_INPUT = 295764338
+# write float
+C4DAIN_AOV_WRITE_FLOAT_AOV_NAME = 1578967454
+C4DAIN_AOV_WRITE_FLOAT_AOV_INPUT = 560859917
+# write int
+C4DAIN_AOV_WRITE_INT_AOV_NAME = 1432272877
+C4DAIN_AOV_WRITE_INT_AOV_INPUT = 25823198
 
 # wireframe node IDs
 C4DAIP_WIREFRAME_LINE_WIDTH = 1755341116
@@ -100,8 +90,11 @@ C4DAIP_MOTION_VECTOR_TIME1 = 1334502789
 C4DAIP_MOTION_VECTOR_MAX_DISPLACE = 700796859
 
 # checkerboard IDs
-C4DAIP_CHECKERBOARD_U_FREQUENCY                    = 2092366454
-C4DAIP_CHECKERBOARD_V_FREQUENCY                    = 34844599
+C4DAIP_CHECKERBOARD_U_FREQUENCY  = 2092366454
+C4DAIP_CHECKERBOARD_V_FREQUENCY  = 34844599
+
+# facing ratio IDs
+C4DAIP_FACING_RATIO_INVERT = 1403163377
 
 # gui IDs
 IDC_LABELNAME           = 10000
@@ -157,6 +150,85 @@ class OptionsDialog(gui.GeDialog):
             self.Close()
 
         return True
+
+def addLayer(name, layer_color):
+   root = doc.GetLayerObjectRoot()
+   LayersList = root.GetChildren() 
+
+   names=[]    
+   layers=[]
+   
+   for l in LayersList:
+       n=l.GetName()
+       names.append(n)
+       layers.append((n,l))
+
+   if not name in names:
+       layer = c4d.documents.LayerObject() #New Layer
+       layer.SetName(name)  
+       layer[c4d.ID_LAYER_COLOR] = layer_color
+       layer_settings = {'solo': False, 'view': True, 'render': True, 'manager': True, 'locked': False, 'generators': False, 'deformers': False, 'expressions': True, 'animation': True}
+       layer.SetLayerData(doc, layer_settings)
+       layer.InsertUnder(root)
+
+   else:
+       for n, l in layers:
+           if n ==name:
+               layer=l
+               break
+   return layer
+
+def addTexTag(obj, layer, mat):
+    textag = c4d.TextureTag()
+    textag.SetMaterial(mat)
+    textag[c4d.ID_BASELIST_NAME] = mat[c4d.ID_BASELIST_NAME]
+    textag[c4d.TEXTURETAG_PROJECTION] = c4d.TEXTURETAG_PROJECTION_UVW
+    textag[c4d.ID_LAYER_LINK] = layer
+    obj.InsertTag(textag)
+    return textag
+
+def addAOV_null (name, layer, mat):
+    null = doc.SearchObject(name)
+    if not null:
+        null = c4d.BaseObject(c4d.Onull)
+        null[c4d.ID_BASELIST_NAME] = name
+        null[c4d.ID_LAYER_LINK] = layer
+        null[c4d.NULLOBJECT_DISPLAY] = 14
+        doc.InsertObject(null)
+
+    # add the material tag and avoid material tag repetitions
+    null_tags = null.GetTags()
+    if not null_tags:
+        addTexTag(null, layer, mat)
+    else:
+        null_tags_names = []
+        for tag in null_tags:
+            null_tags_names.append(tag[c4d.ID_BASELIST_NAME])
+        if not mat[c4d.ID_BASELIST_NAME] in null_tags_names:
+            addTexTag(null, layer, mat)
+        else:
+            None
+
+    # move null in the object manager
+    parent = doc.SearchObject(layer[c4d.ID_BASELIST_NAME])
+    if not parent:
+        objectsList = doc.GetObjects() ; firstObj = doc.GetFirstObject() ; lastObj = objectsList[-1]
+        if not lastObj == null:
+            null.InsertAfter(lastObj)
+    else:
+        null.InsertUnder(parent)
+
+    return null
+
+def hashid(name):
+    if name is None: return 0
+     
+    h = 5381
+    for c in name:
+        h = (h << 5) + h + ord(c)
+    h = ctypes.c_int32(h).value
+    if h < 0: h = -h
+    return h
 
 def getArnoldRenderSettings():
     rdata = doc.GetActiveRenderData()
@@ -257,7 +329,6 @@ def addAov(driver, aovName):
     aov.InsertUnderLast(driver)  
    
 def main():
-
     # find the Arnold video post data    
     arnoldRenderSettings = getArnoldRenderSettings()
     if arnoldRenderSettings is None:
@@ -273,32 +344,34 @@ def main():
     if not dlg.ok:
         return
 
+    # AOV shaders dialog excecution
     dialog = dlg.findCName ; pdialog = dlg.findPName
-
     if pdialog == IDC_POINTSOP01:
         pdialog = True
     else:
         pdialog = False
 
-    print dialog
-    print pdialog
+    # facing ratio - get ID
+    C4DAIN_FACING_RATIO = hashid('facing_ratio')
 
-    shaders_AOVs_names = ['UV', 'Wireframe', 'AO', 'Crypto', 'Fresnel', 'Motion Vector', 'Checkerboard']
+    # main AOVs IDs
+    shaders_AOVs_names = ['UV', 'Wireframe', 'AO', 'Crypto', 'Fresnel', 'mblur', 'Checkerboard'] ; AOV_types = ['RGB', 'Float', 'Int', 'RGBA']
 
+    # main definitions for shaders, materials and AOVs
     if dialog == IDC_AOV_00:
-        shader_AOV_name = shaders_AOVs_names[0] ; shader = C4DAIN_UTILITY           ; AOV_type = 'RGB'
+        shader_AOV_name = shaders_AOVs_names[0] ; shader = C4DAIN_UTILITY           ; AOV_type = AOV_types[0] # RGB
     elif dialog == IDC_AOV_01:
-        shader_AOV_name = shaders_AOVs_names[1] ; shader = C4DAIN_WIREFRAME         ; AOV_type = 'Float'
+        shader_AOV_name = shaders_AOVs_names[1] ; shader = C4DAIN_WIREFRAME         ; AOV_type = AOV_types[2] # int
     elif dialog == IDC_AOV_02:
-        shader_AOV_name = shaders_AOVs_names[2] ; shader = C4DAIN_AMBIENT_OCCLUSION ; AOV_type = 'Float'
+        shader_AOV_name = shaders_AOVs_names[2] ; shader = C4DAIN_AMBIENT_OCCLUSION ; AOV_type = AOV_types[1] # float
     elif dialog == IDC_AOV_03:
-        shader_AOV_name = shaders_AOVs_names[3] ; shader = C4DAIN_CRYPTOMATTE       ; AOV_type = 'Crypto'
+        shader_AOV_name = shaders_AOVs_names[3] ; shader = C4DAIN_CRYPTOMATTE       ; AOV_type = AOV_types[0] # RGB
     elif dialog == IDC_AOV_04:
-        shader_AOV_name = shaders_AOVs_names[4] ; shader = None                     ; AOV_type = 'Float'
+        shader_AOV_name = shaders_AOVs_names[4] ; shader = C4DAIN_FACING_RATIO      ; AOV_type = AOV_types[1] # float
     elif dialog == IDC_AOV_05:
-        shader_AOV_name = shaders_AOVs_names[5] ; shader = C4DAIN_MOTION_VECTOR     ; AOV_type = 'RGB'
+        shader_AOV_name = shaders_AOVs_names[5] ; shader = C4DAIN_MOTION_VECTOR     ; AOV_type = AOV_types[0] # RGB
     elif dialog == IDC_AOV_06:
-        shader_AOV_name = shaders_AOVs_names[6] ; shader = C4DAIN_CHECKERBOARD      ; AOV_type = 'Float'
+        shader_AOV_name = shaders_AOVs_names[6] ; shader = C4DAIN_CHECKERBOARD      ; AOV_type = AOV_types[1] # float
     else:
         shader_AOV_name = 'none'
 
@@ -308,9 +381,13 @@ def main():
         mat = c4d.BaseMaterial(ARNOLD_SHADER_NETWORK)
         if mat is None:
             raise Exception("Failed to create material")
-        mat.SetName(shader_AOV_name) ; doc.InsertMaterial(mat) ; mat_exist = False ; # agregar material al layer
+        mat.SetName(shader_AOV_name) ; doc.InsertMaterial(mat) ; mat_exist = False
+        mat[c4d.ID_LAYER_LINK] = addLayer('AOV Shaders', c4d.Vector(1,0.5,0.5)) ; # agregar material al layer
     else:
         mat_exist = True
+
+    # create AOV shaders null
+    addAOV_null('AOV shaders', addLayer('_Arnold Drivers_', c4d.Vector(0.8,0.2,0.4)), mat)
 
     # add the shader to the AOV shader list
     aovShaders = arnoldRenderSettings.GetData().GetData(C4DAIP_OPTIONS_AOV_SHADERS)
@@ -338,7 +415,6 @@ def main():
             addAov(cryptoDriver, "crypto_asset")
             addAov(cryptoDriver, "crypto_object")
             addAov(cryptoDriver, "crypto_material")
-
     else:
         if displayDriver:
             addAov(displayDriver, shader_AOV_name)
@@ -356,46 +432,63 @@ def main():
         shader_AOV = CreateArnoldShader(mat, shader, 0, 50)
         if shader_AOV is None:
             raise Exception("Failed to create shader_AOV shader")
-        # cryptomatte exceptoin
+
+        # cryptomatte exception
         if shader_AOV_name is 'Crypto':
             SetRootShader(mat, shader_AOV, ARNOLD_BEAUTY_PORT_ID)
         else:
+            # get write shader type
+            if AOV_type is AOV_types[1]: # float
+                wirte_shader_type = C4DAIN_AOV_WRITE_FLOAT
+                wirte_shader_input = C4DAIN_AOV_WRITE_FLOAT_AOV_INPUT
+                write_shader_AOVname = C4DAIN_AOV_WRITE_FLOAT_AOV_NAME
+            elif AOV_type is AOV_types[2]: # int
+                wirte_shader_type = C4DAIN_AOV_WRITE_INT
+                wirte_shader_input = C4DAIN_AOV_WRITE_INT_AOV_INPUT
+                write_shader_AOVname = C4DAIN_AOV_WRITE_INT_AOV_NAME
+            else:                          # RGB
+                wirte_shader_type = C4DAIN_AOV_WRITE_RGB
+                wirte_shader_input = C4DAIN_AOV_WRITE_RGB_AOV_INPUT
+                write_shader_AOVname = C4DAIN_AOV_WRITE_RGB_AOV_NAME
+
             # create write AOV shaders
-            write_AOV = CreateArnoldShader(mat, C4DAIN_AOV_WRITE_RGB, 150, 100)
-            if write_AOV is None:
+            write_shader = CreateArnoldShader(mat, wirte_shader_type, 150, 100)
+            if write_shader is None:
                 raise Exception("Failed to create write_AOV shader")
 
             # set shader parameters
-            write_AOV.SetName("Write_" + shader_AOV_name + "_AOV")
-            write_AOV.GetOpContainerInstance().SetString(C4DAIN_AOV_WRITE_RGB_AOV_NAME, shader_AOV_name)
+            write_shader.SetName("Write_" + shader_AOV_name + "_AOV")
+            write_shader.GetOpContainerInstance().SetString(write_shader_AOVname, shader_AOV_name)
 
+            # set shader name
             shader_AOV.SetName(shader_AOV_name + "_AOV")
 
             # patameters for each AOV shader
-            if shader_AOV_name is 'UV':
+            if shader_AOV_name is shaders_AOVs_names[0]: # UV
                 shader_AOV.GetOpContainerInstance().SetInt32(C4DAIP_UTILITY_SHADE_MODE, C4DAIP_UTILITY_SHADE_MODE__FLAT)
                 shader_AOV.GetOpContainerInstance().SetInt32(C4DAIP_UTILITY_COLOR_MODE, C4DAIP_UTILITY_COLOR_MODE__UV)
-            elif shader_AOV_name is 'wireframe':
-                shader_AOV.GetOpContainerInstance().SetFloat(C4DAIP_WIREFRAME_LINE_WIDTH, 0.5)
+            elif shader_AOV_name is shaders_AOVs_names[1]: # wireframe
+                shader_AOV.GetOpContainerInstance().SetFloat(C4DAIP_WIREFRAME_LINE_WIDTH, 0.75)
                 shader_AOV.GetOpContainerInstance().SetInt32(C4DAIP_WIREFRAME_EDGE_TYPE, 1)
-            elif shader_AOV_name is 'AO':
+            elif shader_AOV_name is shaders_AOVs_names[2]: # AO
                 shader_AOV.GetOpContainerInstance().SetInt32(C4DAIP_AMBIENT_OCCLUSION_SAMPLES, 4)
-            elif shader_AOV_name is 'Crypto':
+            elif shader_AOV_name is shaders_AOVs_names[3]: # crypto
                 None
-            elif shader_AOV_name is 'fresnel':
-                None
-            elif shader_AOV_name is 'Motion Vector':
+            elif shader_AOV_name is shaders_AOVs_names[4]: # fresnel
+                shader_AOV.GetOpContainerInstance().SetBool(C4DAIP_FACING_RATIO_INVERT, True)
+            elif shader_AOV_name is shaders_AOVs_names[5]: # motion vector
                 shader_AOV.GetOpContainerInstance().SetBool(C4DAIP_MOTION_VECTOR_RAW, True)
                 shader_AOV.GetOpContainerInstance().SetFloat(C4DAIP_MOTION_VECTOR_MAX_DISPLACE, 64)
-            elif shader_AOV_name is 'Checkerboard':
+            elif shader_AOV_name is shaders_AOVs_names[6]: # checkerboard
                 shader_AOV.GetOpContainerInstance().SetInt32(C4DAIP_CHECKERBOARD_U_FREQUENCY, 5)
                 shader_AOV.GetOpContainerInstance().SetInt32(C4DAIP_CHECKERBOARD_V_FREQUENCY, 5)
             else:
                 None
 
             # connect shaders
-            SetRootShader(mat, write_AOV, ARNOLD_BEAUTY_PORT_ID)
-            AddConnection(mat, shader_AOV, write_AOV, C4DAIN_AOV_WRITE_RGB_AOV_INPUT)
+            SetRootShader(mat, write_shader, ARNOLD_BEAUTY_PORT_ID)
+            AddConnection(mat, shader_AOV, write_shader, wirte_shader_input)
+
     else:
         None
     
@@ -408,7 +501,6 @@ def main():
             ejecturar camera tag
         else:
             None"""
-
 
     # redraw
     c4d.EventAdd(c4d.EVENT_FORCEREDRAW)

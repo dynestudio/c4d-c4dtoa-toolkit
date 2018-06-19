@@ -30,11 +30,6 @@ C4DAIP_FISHEYE_CAMERA_SHUTTER_END      = 209500179
 C4DAIP_CYL_CAMERA_SHUTTER_START        = 746177151
 C4DAIP_CYL_CAMERA_SHUTTER_END          = 74265400
 
-#[c4d.AITAG_CAMERA_USE_TYPE]
-#[c4d.AITAG_CAMERA_TYPE]
-
-# que reconozca el tipo de camara para saber que shutters settings usar
-
 #get all objects with children
 def get_all_objects(op, filter, output):
     while op:
@@ -45,44 +40,35 @@ def get_all_objects(op, filter, output):
     return output
 
 def addAiTag():
+    camerasList = get_all_objects(doc.GetFirstObject(), lambda x: x.CheckType(c4d.Ocamera), []) # get all cameras from the scene
 
-    #get active objects
-    """activeObjects = doc.GetActiveObjects(c4d.GETACTIVEOBJECTFLAGS_CHILDREN)
-    if not activeObjects:
-        gui.MessageDialog('Please select one or more objects.')
-        return """
-
-    objectsList = get_all_objects(doc.GetFirstObject(), lambda x: x.CheckType(c4d.Ocamera), [])
-
-    print objectsList
-
-    # obtener los tags de los objetos para evitar sobre escrituras
-    # si ya tiene el tag, que solo sobre escriba los parametros pero que no cree una nueva
-
-    for obj in objectsList:
-        obj_tags = obj.GetTags() ; cam_tag = None
+    for obj in camerasList:
+        obj_tags = obj.GetTags()
         if not obj_tags:
-            obj.MakeTag(C4DAIN_TAG) # new camera tag
+            cam_tag = obj.MakeTag(C4DAIN_TAG) # new camera tag
         else:
             obj_tags_types = []
             for tag in obj_tags:
-                print tag.GetType()
                 obj_tags_types.append(tag.GetType())
+                if tag.GetType() == C4DAIN_TAG:
+                    cam_tag = tag
 
-            print obj_tags_types
             if not C4DAIN_TAG in obj_tags_types:
                 cam_tag = obj.MakeTag(C4DAIN_TAG)
 
+        if cam_tag[c4d.AITAG_CAMERA_USE_TYPE] == False:
+            cam_tag[c4d.AITAG_CAMERA_USE_TYPE] = True ; cam_tag[c4d.AITAG_CAMERA_TYPE] = C4DAIN_PERSP_CAMERA
+
         # cam settings definitions based on each camera type
-        if cam_tag[c4d.AITAG_CAMERA_TYPE] is C4DAIN_CYL_CAMERA:           # cyl camera
+        if cam_tag[c4d.AITAG_CAMERA_TYPE] == C4DAIN_CYL_CAMERA:           # cyl camera
             CAMERA_SHUTTER_START = C4DAIP_CYL_CAMERA_SHUTTER_START ; CAMERA_SHUTTER_END = C4DAIP_CYL_CAMERA_SHUTTER_END
-        elif cam_tag[c4d.AITAG_CAMERA_TYPE] is C4DAIN_FISHEYE_CAMERA:     # fisheye camera
+        elif cam_tag[c4d.AITAG_CAMERA_TYPE] == C4DAIN_FISHEYE_CAMERA:     # fisheye camera
             CAMERA_SHUTTER_START = C4DAIP_FISHEYE_CAMERA_SHUTTER_START ; CAMERA_SHUTTER_END = C4DAIP_FISHEYE_CAMERA_SHUTTER_END
-        elif cam_tag[c4d.AITAG_CAMERA_TYPE] is C4DAIN_ORTHO_CAMERA:       # ortho camera
+        elif cam_tag[c4d.AITAG_CAMERA_TYPE] == C4DAIN_ORTHO_CAMERA:       # ortho camera
             CAMERA_SHUTTER_START = C4DAIP_ORTHO_CAMERA_SHUTTER_START ; CAMERA_SHUTTER_END = C4DAIP_ORTHO_CAMERA_SHUTTER_END
-        elif cam_tag[c4d.AITAG_CAMERA_TYPE] is C4DAIN_SPHERICAL_CAMERA:   # spherical camera
+        elif cam_tag[c4d.AITAG_CAMERA_TYPE] == C4DAIN_SPHERICAL_CAMERA:   # spherical camera
             CAMERA_SHUTTER_START = C4DAIP_SPHERICAL_CAMERA_SHUTTER_START ; CAMERA_SHUTTER_END = C4DAIP_SPHERICAL_CAMERA_SHUTTER_END
-        elif cam_tag[c4d.AITAG_CAMERA_TYPE] is C4DAIN_VR_CAMERA:          # vr camera
+        elif cam_tag[c4d.AITAG_CAMERA_TYPE] == C4DAIN_VR_CAMERA:          # vr camera
             CAMERA_SHUTTER_START = C4DAIP_VR_CAMERA_SHUTTER_START ; CAMERA_SHUTTER_END = C4DAIP_VR_CAMERA_SHUTTER_END
         else:                                                             # persp camera
             CAMERA_SHUTTER_START = C4DAIP_PERSP_CAMERA_SHUTTER_START ; CAMERA_SHUTTER_END = C4DAIP_PERSP_CAMERA_SHUTTER_END
@@ -93,6 +79,5 @@ def addAiTag():
         cam_tag[CAMERA_SHUTTER_END]               = 0.5
 
     c4d.EventAdd()
-    print "finish"
 
 addAiTag()
